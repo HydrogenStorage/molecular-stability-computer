@@ -1,0 +1,17 @@
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry]
+name = 'emin'
+version = '0.0.1'
+description = 'Assess synthesizability from the relative stability of molecules'
+authors = [
+    'Logan Ward <ward.logan.t@gmail.com>'
+]
+packages = [
+    {include = "emin"},
+]
+
+[tool.poetry.dependencies]
+requests = "^2.13.0"

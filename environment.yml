@@ -1,0 +1,25 @@
+name: emin
+channels:
+  - defaults
+  - conda-forge
+dependencies:
+  # Core dependencies
+  - python==3.11.*
+  - scikit-learn>=1
+  - jupyterlab
+  - pytest
+  - flake8
+  - pip
+
+# Dependencies from the molecular design app
+  - geometric==0.9.*
+  - qcengine
+  - rdkit==2023.*
+  - xtb-python
+  - psutil
+  - tqdm
+
+# Pip packages for all of them
+  - pip:
+      - -e . 
+      - parsl>=1.*
