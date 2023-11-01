@@ -1,5 +1,6 @@
 """Compute the E_min of a target molecule"""
 from concurrent.futures import Future, as_completed
+from csv import DictReader
 from functools import partial, update_wrapper
 from argparse import ArgumentParser
 from pathlib import Path
@@ -80,11 +81,10 @@ if __name__ == "__main__":
     if not energy_file.exists():
         energy_file.write_text('inchi_key,smiles,level,relax,energy\n')
     with energy_file.open() as fp:
-        fp.readline()  # Skip the header
-        for line in fp:
-            key, _, level, relax, our_energy = line.strip().split(",")
-            if level == args.level and bool(relax) != args.no_relax:
-                known_energies[key] = float(our_energy)
+        reader = DictReader(fp)
+        for row in reader:
+            if row['level'] == args.level and row['relax'] != str(args.no_relax):
+                known_energies[row['inchi_key']] = float(row['energy'])
     logger.info(f'Loaded {len(known_energies)} energies from previous runs')
 
     # Open the output files
@@ -94,9 +94,10 @@ if __name__ == "__main__":
         def _store_result(new_key, new_smiles, new_energy, result):
             if result is None or result.success:
                 known_energies[new_key] = new_energy
+                print(f'{new_key},{new_smiles},{args.level},{not args.no_relax},{new_energy}', file=fe)
             if result is not None:
                 print(result.json(), file=fr)
-            print(f'{new_key},{new_smiles},{args.level},{not args.no_relax},{new_energy}', file=fe)
+
 
         def _run_if_needed(my_smiles: str) -> tuple[bool, float | Future]:
             """Get the energy either by looking up result or running a new computation
@@ -141,11 +142,12 @@ if __name__ == "__main__":
         # Wait for the results to finish
         logger.info(f'Waiting for {len(futures)} computations to finish')
 
-        def _process_futures(my_futures: list[Future]) -> int:
+        def _process_futures(my_futures: list[Future], warnings: bool = True) -> int:
             my_failures = 0
             for future in as_completed(my_futures):
                 if future.exception() is not None:
-                    logger.warning(f'Failure running {future.key}: {future.exception()}')
+                    if warnings:
+                        logger.warning(f'Failure running {future.key}: {future.exception()}')
                     my_failures += 1
                 else:
                     energy, result = future.result()
@@ -167,7 +169,7 @@ if __name__ == "__main__":
             else:
                 logger.info(f'Selecting a random subset from Surge molecules. Amount to select: {args.surge_amount}')
                 mol_list, total = get_random_selection_with_surge(formula, to_select=args.surge_amount)
-                logger.info(f'Selected {len(mol_list)} molecules out of {total} created by Surge')
+                logger.info(f'Selected {len(mol_list)} molecules out of {total} created by Surge. ({len(mol_list) / total * 100:.2g}%)')
 
             # Run each
             surge_count = 0
@@ -181,7 +183,7 @@ if __name__ == "__main__":
                     futures.append(result)
             logger.info(f'Generated {surge_count} molecules and submitted {len(futures)} to run')
 
-            failures = _process_futures(futures)
+            failures = _process_futures(futures, warnings=False)
             logger.info(f'Ran {len(futures)} molecules from Surge. {failures} failed.')
 
         logger.info(f'Final E_min compared against {len(known_energies)} molecules: {(our_energy - min(known_energies.values())) * 1000: .1f} mHa')
