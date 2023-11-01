@@ -14,7 +14,7 @@ from rdkit.Chem import rdMolDescriptors
 from rdkit import Chem, RDLogger
 
 from emin.generate import generate_molecules_with_surge, get_random_selection_with_surge
-from emin.parsl import run_molecule
+from emin.parsl import run_molecule, load_config
 from emin.source import get_molecules_from_pubchem
 
 RDLogger.DisableLog('rdApp.*')
@@ -33,6 +33,8 @@ if __name__ == "__main__":
     parser = ArgumentParser()
     parser.add_argument('--level', default='xtb', help='Accuracy level at which to compute energies')
     parser.add_argument('--no-relax', action='store_true', help='Skip relaxing the molecular structure')
+    parser.add_argument('--compute-config',
+                        help='Path to the file defining the Parsl configuration. Configuration should be in variable named ``config``')
     parser.add_argument('--surge-amount', type=float,
                         help='Maximum number or fraction of molecules to generate from Surge. Set to 0 or less to disable surge. Default is to run all')
     parser.add_argument('molecule', help='SMILES or InChI of the target molecule')
@@ -66,9 +68,15 @@ if __name__ == "__main__":
     logger.info(f'Running accuracy level: {args.level}. Relaxation: {not args.no_relax}')
 
     # Start Parsl
-    config = Config(
-        executors=[HighThroughputExecutor(max_workers=1, address='127.0.0.1')]
-    )
+    if args.compute_config is None:
+        logger.info('Using default Parsl configuration of a single worker on the local machine')
+        config = Config(
+            executors=[HighThroughputExecutor(max_workers=1, address='127.0.0.1')]
+        )
+    else:
+        logger.info(f'Loading Parsl configuration from {args.compute_config}')
+        config = load_config(args.compute_config)
+
     parsl.load(config)
     pinned_fun = partial(run_molecule, level=args.level, relax=not args.no_relax)
     update_wrapper(pinned_fun, run_molecule)

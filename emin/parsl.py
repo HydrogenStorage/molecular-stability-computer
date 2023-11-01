@@ -59,6 +59,7 @@ def load_config(path: str | Path, var_name: str = 'config') -> Config:
     """
 
     spec_ns = {}
+    path = Path(path)
     exec(path.read_text(), spec_ns)
     if var_name not in spec_ns:
         raise ValueError(f'Variable {var_name} not found in {path}')
