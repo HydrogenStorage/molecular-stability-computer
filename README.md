@@ -60,5 +60,7 @@ compute the energies of other molecules more quickly.
 
 - `--surge-amount`: How many molecules to generate with Surge. Set to either a fraction 
   of all possible molecules or a total amount.
+- `--level`: What level of quantum chemistry to run. Options include 'xtb'
+- `--no-relax`: Skip relaxing the model
 
 A full listing of options for `compute_emin.py` is available by calling.

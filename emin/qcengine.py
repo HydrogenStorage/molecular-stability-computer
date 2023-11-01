@@ -7,8 +7,16 @@ import qcengine as qcng
 
 
 def get_qcengine_spec(level_name: str) -> tuple[str, QCInputSpecification]:
-    """Get a specification for a certain accuracy level"""
+    """Get a specification for a certain accuracy level
 
+    Args:
+        level_name: Name of the accuracy level
+    Returns:
+        - Name of the code to use
+        - Input specification, if applicable
+    """
+
+    level_name = level_name.lower()
     if level_name == 'xtb':
         return 'xtb', QCInputSpecification(
             driver='gradient',
@@ -45,6 +53,29 @@ def generate_xyz(smiles: str) -> str:
         xyz += f"{s} {c[0]} {c[1]} {c[2]}\n"
 
     return xyz
+
+
+def evaluate_mmff94(smiles: str, relax: bool) -> float:
+    """Generate a structure then compute the energy with the MMFF94 forcefield
+
+    Args:
+        smiles: SMILES string of the molecule
+        relax: Whether to run relaxation
+    Returns:
+        Energy of the molecule
+    """
+    # Generate 3D coordinates for the molecule
+    mol = Chem.MolFromSmiles(smiles)
+    mol = Chem.AddHs(mol)
+    AllChem.EmbedMolecule(mol, randomSeed=1)
+
+    # Make the forcefield
+    ffprops = AllChem.MMFFGetMoleculeProperties(mol)
+    ff = AllChem.MMFFGetMoleculeForceField(mol, ffprops)
+
+    if relax:
+        ff.Minimize()
+    return ff.CalcEnergy() / 627.509
 
 
 def relax_molecule(xyz: str, code: str, spec: QCInputSpecification) -> OptimizationResult:

@@ -1,10 +1,13 @@
 """Test computing the atomizaton energy of a molecule"""
+
+from pytest import mark
 from emin.qcengine import generate_xyz, relax_molecule, compute_energy, get_qcengine_spec
 
 
-def test_methane():
+@mark.parametrize('level', ['xtb'])
+def test_methane(level):
     xyz = generate_xyz('C')
-    code, spec = get_qcengine_spec('xtb')
+    code, spec = get_qcengine_spec(level)
 
     # Single point energy
     eng_result = compute_energy(xyz, code, spec)

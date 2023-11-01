@@ -93,7 +93,8 @@ if __name__ == "__main__":
         # Make utility functions
         def _store_result(new_key, new_smiles, new_energy, result):
             known_energies[new_key] = new_energy
-            print(result.json(), file=fr)
+            if result is not None:
+                print(result.json(), file=fr)
             print(f'{new_key},{new_smiles},{args.level},{not args.no_relax},{new_energy}', file=fe)
 
         def _run_if_needed(my_smiles: str) -> tuple[bool, float | Future]:

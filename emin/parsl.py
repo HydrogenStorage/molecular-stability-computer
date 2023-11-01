@@ -5,10 +5,10 @@ Includes functions to be run remotely and other utilities
 from qcelemental.models import AtomicResult
 from qcelemental.models.procedures import OptimizationResult
 
-from emin.qcengine import generate_xyz, relax_molecule, get_qcengine_spec, compute_energy
+from emin.qcengine import generate_xyz, relax_molecule, get_qcengine_spec, compute_energy, evaluate_mmff94
 
 
-def run_molecule(smiles: str, level: str, relax: bool = True) -> tuple[float, AtomicResult | OptimizationResult]:
+def run_molecule(smiles: str, level: str, relax: bool = True) -> tuple[float, AtomicResult | OptimizationResult | None]:
     """Compute the energy of a molecule
 
     Args:
@@ -19,6 +19,10 @@ def run_molecule(smiles: str, level: str, relax: bool = True) -> tuple[float, At
         - Energy. ``None`` if the computation failed
         - Complete record of the optimization
     """
+
+    # Special case: MMFF94
+    if level == 'mmff94':
+        return evaluate_mmff94(smiles, relax), None
 
     # Make a xTB spec
     code, spec = get_qcengine_spec(level)
