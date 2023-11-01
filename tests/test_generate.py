@@ -24,6 +24,7 @@ def test_fixed_amount():
     # Test only a certain number
     fixed_number, total = get_random_selection_with_surge('C3H6', 1)
     assert len(fixed_number) == 1
+    assert isinstance(fixed_number[0], str)
     assert total == len(list(generate_molecules_with_surge('C3H6')))
 
     # Test only a certain fraction
