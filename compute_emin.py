@@ -1,16 +1,18 @@
 """Compute the E_min of a target molecule"""
+from concurrent.futures import Future, as_completed
 from argparse import ArgumentParser
 from pathlib import Path
 import logging
 import gzip
 import sys
 
-from qcelemental.models.procedures import QCInputSpecification, OptimizationResult
+import parsl
+from parsl import Config, HighThroughputExecutor, python_app
 from rdkit.Chem import rdMolDescriptors
 from rdkit import Chem, RDLogger
 
 from emin.generate import generate_molecules_with_surge, get_random_selection_with_surge
-from emin.qcengine import relax_molecule, generate_xyz
+from emin.parsl import run_molecule
 from emin.source import get_molecules_from_pubchem
 
 RDLogger.DisableLog('rdApp.*')
@@ -22,35 +24,6 @@ def get_key(smiles: str) -> str:
     if mol is None:
         raise ValueError(f'SMILES failed to parse: {smiles}')
     return Chem.MolToInchiKey(mol)
-
-
-def run_molecule(smiles: str) -> tuple[float, OptimizationResult]:
-    """Compute the energy of a molecule
-
-    Args:
-        smiles: SMILES string of the molecule
-    Returns:
-        - Energy. ``None`` if the computation failed
-        - Complete record of the optimization
-    """
-
-    # Make a xTB spec
-    spec = QCInputSpecification(
-        driver='gradient',
-        model={'method': 'GFN2-xTB'},
-        keywords={"accuracy": 0.05}
-    )
-
-    # Run the relaxation
-    xyz = generate_xyz(smiles)
-    result = relax_molecule(xyz, 'xtb', spec)
-
-    # If the result was successful, get the energy
-    energy = None
-    if result.success:
-        energy = result.energies[-1]
-
-    return energy, result
 
 
 if __name__ == "__main__":
@@ -87,6 +60,14 @@ if __name__ == "__main__":
     our_key = Chem.MolToInchiKey(mol)
     logger.info(f'Starting E_min run for {args.molecule} (InChI Key: {our_key}) in {out_dir}')
 
+    # Start Parsl
+    config = Config(
+        executors=[HighThroughputExecutor(max_workers=1, address='127.0.0.1')]
+    )
+    parsl.load(config)
+    run_app = python_app(run_molecule)
+    logger.info('Started Parsl and created the app to be run')
+
     # Load any previous computations
     energy_file: Path = out_dir / 'energies.csv'
     known_energies = {}
@@ -103,39 +84,68 @@ if __name__ == "__main__":
     result_file = out_dir / 'results.json.gz'
     with gzip.open(result_file, 'at') as fr, energy_file.open('a') as fe:
         # Make utility functions
-        def _append_energy(new_key, new_smiles, new_energy):
+        def _store_result(new_key, new_smiles, new_energy, result):
+            known_energies[new_key] = new_energy
+            print(result.json(), file=fr)
             print(f'{new_key},{new_smiles},{new_energy}', file=fe)
 
+        def _run_if_needed(smiles: str) -> tuple[bool, float | Future]:
+            """Get the energy either by looking up result or running a new computation
 
-        def _run_if_needed(smiles: str) -> float:
-            """Get the energy either by looking up result or running a new computation"""
+            Returns:
+                - Whether the energy is done now
+                - Either the energy or a future with the label "key" associated with it
+            """
             key = get_key(smiles)
             if key not in known_energies:
-                energy, result = run_molecule(Chem.MolToSmiles(mol))
-                known_energies[key] = energy
-                print(result.json(), file=fr)
-                _append_energy(key, smiles, energy)
-                return energy
+                future = run_app(Chem.MolToSmiles(mol))
+                future.key = key
+                future.smiles = smiles
+                return False, future
             else:
-                return known_energies[key]
-
+                return True, known_energies[key]
 
         # Start by running our molecule
-        our_energy = _run_if_needed(Chem.MolToSmiles(mol))
+        our_smiles = Chem.MolToSmiles(mol)
+        is_done, our_energy = _run_if_needed(our_smiles)
+        if not is_done:
+            our_energy, result = our_energy.result()
+            _store_result(our_key, our_smiles, our_energy, result)
         logger.info(f'Target molecule has an energy of {our_energy:.3f} Ha')
 
-        # Test molecules from PubChem
+        # Gather molecules from PubChem
         pubchem = get_molecules_from_pubchem(formula)
         logger.info(f'Pulled {len(pubchem)} molecules for {formula} from PubChem')
+
+        # Submit them all
+        futures = []
         failures = 0
         for smiles in pubchem:
             try:
-                energy = _run_if_needed(smiles)
+                is_done, result = _run_if_needed(smiles)
+                if not is_done:
+                    futures.append(result)
             except ValueError:
                 logger.warning(f'Failed to parse SMILES from PubChem: {smiles}')
                 failures += 1
-        logger.info(f'Successfully ran {len(pubchem) - failures}/{len(pubchem)} molecules from PubChem')
 
+        # Wait for the results to finish
+        logger.info(f'Waiting for {len(futures)} computations to finish')
+
+        def _process_futures(my_futures: list[Future]) -> int:
+            my_failures = 0
+            for future in as_completed(my_futures):
+                if future.exception() is not None:
+                    logger.warning(f'Failure running {future.key}: {future.exception()}')
+                    my_failures += 1
+                else:
+                    energy, result = future.result()
+                    _store_result(future.key, future.smiles, energy, result)
+            return my_failures
+
+        failures = _process_futures(futures)
+
+        logger.info(f'Successfully ran {len(pubchem) - failures}/{len(pubchem)} molecules from PubChem')
         logger.info(f'Emin of molecule compared to PubChem: {(our_energy - min(known_energies.values())) * 1000:.1f} mHa')
 
         # Test molecules from surge
@@ -154,12 +164,15 @@ if __name__ == "__main__":
             surge_count = 0
             current_min = min(known_energies.values())
 
+            futures = []
             for smiles in mol_list:
                 surge_count += 1
-                energy = _run_if_needed(smiles)
-                if energy < current_min:
-                    current_min = energy
-                    logger.info(f'Updated E_min to ({(our_energy - current_min) * 1000:.1f}) mHa')
-            logger.info(f'Ran {surge_count} molecules from Surge')
+                is_done, result = _run_if_needed(smiles)
+                if not is_done:
+                    futures.append(result)
+            logger.info(f'Generated {surge_count} molecules and submitted {len(futures)} to run')
+
+            failures = _process_futures(futures)
+            logger.info(f'Ran {len(futures)} molecules from Surge. {failures} failed.')
 
         logger.info(f'Final E_min compared against {len(known_energies)} molecules: {(our_energy - min(known_energies.values())) * 1000: .1f} mHa')
