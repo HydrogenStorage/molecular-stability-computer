@@ -6,15 +6,17 @@ from argparse import ArgumentParser
 from pathlib import Path
 import logging
 import gzip
+import json
 import sys
 
 import parsl
 from parsl import Config, HighThroughputExecutor, python_app
+from qcelemental.models import OptimizationResult, AtomicResult
 from rdkit.Chem import rdMolDescriptors
 from rdkit import Chem, RDLogger
 
 from emin.generate import generate_molecules_with_surge, get_random_selection_with_surge
-from emin.parsl import run_molecule
+from emin.parsl import run_molecule, load_config
 from emin.source import get_molecules_from_pubchem
 
 RDLogger.DisableLog('rdApp.*')
@@ -33,6 +35,8 @@ if __name__ == "__main__":
     parser = ArgumentParser()
     parser.add_argument('--level', default='xtb', help='Accuracy level at which to compute energies')
     parser.add_argument('--no-relax', action='store_true', help='Skip relaxing the molecular structure')
+    parser.add_argument('--compute-config',
+                        help='Path to the file defining the Parsl configuration. Configuration should be in variable named ``config``')
     parser.add_argument('--surge-amount', type=float,
                         help='Maximum number or fraction of molecules to generate from Surge. Set to 0 or less to disable surge. Default is to run all')
     parser.add_argument('molecule', help='SMILES or InChI of the target molecule')
@@ -66,9 +70,15 @@ if __name__ == "__main__":
     logger.info(f'Running accuracy level: {args.level}. Relaxation: {not args.no_relax}')
 
     # Start Parsl
-    config = Config(
-        executors=[HighThroughputExecutor(max_workers=1, address='127.0.0.1')]
-    )
+    if args.compute_config is None:
+        logger.info('Using default Parsl configuration of a single worker on the local machine')
+        config = Config(
+            executors=[HighThroughputExecutor(max_workers=1, address='127.0.0.1')]
+        )
+    else:
+        logger.info(f'Loading Parsl configuration from {args.compute_config}')
+        config = load_config(args.compute_config)
+
     parsl.load(config)
     pinned_fun = partial(run_molecule, level=args.level, relax=not args.no_relax)
     update_wrapper(pinned_fun, run_molecule)
@@ -79,7 +89,7 @@ if __name__ == "__main__":
     energy_file: Path = out_dir / 'energies.csv'
     known_energies = {}
     if not energy_file.exists():
-        energy_file.write_text('inchi_key,smiles,level,relax,energy\n')
+        energy_file.write_text('inchi_key,smiles,level,relax,energy,xyz\n')
     with energy_file.open() as fp:
         reader = DictReader(fp)
         for row in reader:
@@ -91,13 +101,20 @@ if __name__ == "__main__":
     result_file = out_dir / 'results.json.gz'
     with gzip.open(result_file, 'at') as fr, energy_file.open('a') as fe:
         # Make utility functions
-        def _store_result(new_key, new_smiles, new_energy, result):
-            if result is None or result.success:
-                known_energies[new_key] = new_energy
-                print(f'{new_key},{new_smiles},{args.level},{not args.no_relax},{new_energy}', file=fe)
-            if result is not None:
-                print(result.json(), file=fr)
+        def _store_result(new_key, new_smiles, new_energy, new_result: OptimizationResult | AtomicResult | None):
+            # Get the XYZ
+            xyz = None
+            if isinstance(new_result, OptimizationResult):
+                xyz = new_result.final_molecule.to_string('xyz')
+            elif isinstance(new_result, AtomicResult):
+                xyz = new_result.molecule.to_string('xyz')
 
+            if new_result is None or new_result.success:
+                known_energies[new_key] = new_energy
+                print(f'{new_key},{new_smiles},{args.level},{not args.no_relax},{new_energy},{json.dumps(xyz)}', file=fe)
+
+            if new_result is not None:
+                print(new_result.json(), file=fr)
 
         def _run_if_needed(my_smiles: str) -> tuple[bool, float | Future]:
             """Get the energy either by looking up result or running a new computation

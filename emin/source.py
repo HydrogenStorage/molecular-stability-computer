@@ -32,5 +32,7 @@ def get_molecules_from_pubchem(formula: str, neutral_only: bool = True, ignore_i
     for inchi in output:
         mol = Chem.MolFromInchi(inchi)
         if mol is not None:
-            output_smiles.append(Chem.MolToSmiles(mol))
+            smiles = Chem.MolToSmiles(mol)
+            if '.' not in smiles:  # Skip molecules broken into two parts
+                output_smiles.append(smiles)
     return output_smiles
