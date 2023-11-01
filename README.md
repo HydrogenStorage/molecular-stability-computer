@@ -1,5 +1,6 @@
 # Molecular Stability Computer
 [![CI](https://github.com/HydrogenStorage/molecular-stability-computer/actions/workflows/python-app.yml/badge.svg)](https://github.com/HydrogenStorage/molecular-stability-computer/actions/workflows/python-app.yml)
+[![Coverage Status](https://coveralls.io/repos/github/HydrogenStorage/molecular-stability-computer/badge.svg?branch=main)](https://coveralls.io/github/HydrogenStorage/molecular-stability-computer?branch=main)
 
 Estimate the synthesizability of a molecule by assessing its stability relative to other molecules.
 Computes the E<sub>min</sub> metric proposed by Lee et al., which is the difference between the energy of a molecule 
@@ -61,6 +62,8 @@ compute the energies of other molecules more quickly.
 - `--surge-amount`: How many molecules to generate with Surge. Set to either a fraction 
   of all possible molecules or a total amount.
 - `--level`: What level of quantum chemistry to run. Options include 'xtb', 'mmff94'
-- `--no-relax`: Skip relaxing the model
+- `--compute-config`: Change the computational resources available for computing molecular energies
+  by pointing to a Python file which defines a [Parsl configuration](https://parsl-project.org/).
+- `--no-relax`: Skip relaxing the molecule
 
-A full listing of options for `compute_emin.py` is available by calling.
+A full list of options for `compute_emin.py` is available by calling `python compute_emin.py --help`.
