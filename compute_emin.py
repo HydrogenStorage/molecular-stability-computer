@@ -6,10 +6,12 @@ from argparse import ArgumentParser
 from pathlib import Path
 import logging
 import gzip
+import json
 import sys
 
 import parsl
 from parsl import Config, HighThroughputExecutor, python_app
+from qcelemental.models import OptimizationResult, AtomicResult
 from rdkit.Chem import rdMolDescriptors
 from rdkit import Chem, RDLogger
 
@@ -87,7 +89,7 @@ if __name__ == "__main__":
     energy_file: Path = out_dir / 'energies.csv'
     known_energies = {}
     if not energy_file.exists():
-        energy_file.write_text('inchi_key,smiles,level,relax,energy\n')
+        energy_file.write_text('inchi_key,smiles,level,relax,energy,xyz\n')
     with energy_file.open() as fp:
         reader = DictReader(fp)
         for row in reader:
@@ -99,12 +101,20 @@ if __name__ == "__main__":
     result_file = out_dir / 'results.json.gz'
     with gzip.open(result_file, 'at') as fr, energy_file.open('a') as fe:
         # Make utility functions
-        def _store_result(new_key, new_smiles, new_energy, result):
-            if result is None or result.success:
+        def _store_result(new_key, new_smiles, new_energy, new_result: OptimizationResult | AtomicResult | None):
+            # Get the XYZ
+            xyz = None
+            if isinstance(new_result, OptimizationResult):
+                xyz = new_result.final_molecule.to_string('xyz')
+            elif isinstance(new_result, AtomicResult):
+                xyz = new_result.molecule.to_string('xyz')
+
+            if new_result is None or new_result.success:
                 known_energies[new_key] = new_energy
-                print(f'{new_key},{new_smiles},{args.level},{not args.no_relax},{new_energy}', file=fe)
-            if result is not None:
-                print(result.json(), file=fr)
+                print(f'{new_key},{new_smiles},{args.level},{not args.no_relax},{new_energy},{json.dumps(xyz)}', file=fe)
+
+            if new_result is not None:
+                print(new_result.json(), file=fr)
 
         def _run_if_needed(my_smiles: str) -> tuple[bool, float | Future]:
             """Get the energy either by looking up result or running a new computation
