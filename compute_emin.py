@@ -98,7 +98,6 @@ if __name__ == "__main__":
             if result is not None:
                 print(result.json(), file=fr)
 
-
         def _run_if_needed(my_smiles: str) -> tuple[bool, float | Future]:
             """Get the energy either by looking up result or running a new computation
 

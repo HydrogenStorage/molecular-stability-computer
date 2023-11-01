@@ -2,6 +2,9 @@
 
 Includes functions to be run remotely and other utilities
 """
+from pathlib import Path
+
+from parsl import Config
 from qcelemental.models import AtomicResult
 from qcelemental.models.procedures import OptimizationResult
 
@@ -43,3 +46,21 @@ def run_molecule(smiles: str, level: str, relax: bool = True) -> tuple[float, At
     else:
         result = compute_energy(xyz, code, spec)
         return result.return_result, result
+
+
+def load_config(path: str | Path, var_name: str = 'config') -> Config:
+    """Load a configuration from a file
+
+    Args:
+        path: Path to the configuration file
+        var_name: Name of the configuration within that file
+    Returns:
+        What should be a Parsl configuration
+    """
+
+    spec_ns = {}
+    exec(path.read_text(), spec_ns)
+    if var_name not in spec_ns:
+        raise ValueError(f'Variable {var_name} not found in {path}')
+
+    return spec_ns[var_name]
