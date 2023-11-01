@@ -16,6 +16,11 @@ conda env create --file environment.yml
 
 Then download [Surge](https://github.com/StructureGenerator/surge), which is used to generate candidate molecules.
 
+```commandline
+cd bin
+. get-surge.sh
+```
+
 ## Quickstart
 
 The [`compute_emin.py`](./compute_emin.py) script is CLI application 
