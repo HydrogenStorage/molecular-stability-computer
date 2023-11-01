@@ -92,7 +92,8 @@ if __name__ == "__main__":
     with gzip.open(result_file, 'at') as fr, energy_file.open('a') as fe:
         # Make utility functions
         def _store_result(new_key, new_smiles, new_energy, result):
-            known_energies[new_key] = new_energy
+            if result is None or result.success:
+                known_energies[new_key] = new_energy
             if result is not None:
                 print(result.json(), file=fr)
             print(f'{new_key},{new_smiles},{args.level},{not args.no_relax},{new_energy}', file=fe)
