@@ -1,4 +1,5 @@
 """Source molecules from PubChem"""
+from rdkit import Chem
 import requests
 
 
@@ -10,7 +11,7 @@ def get_molecules_from_pubchem(formula: str, neutral_only: bool = True, ignore_i
         neutral_only: Only return neutral molecules
         ignore_isotopes: Skip molecules where isotopes are specified
     Returns:
-        List of InChI strings of molecules known in PubChem
+        List of SMILES strings of molecules known in PubChem
     """
 
     # Download the file all in one chunk
@@ -25,4 +26,11 @@ def get_molecules_from_pubchem(formula: str, neutral_only: bool = True, ignore_i
         if ignore_isotopes and '/i' in inchi:
             continue
         output.add(inchi)
-    return list(output)
+
+    # Convert to SMILES and return
+    output_smiles = []
+    for inchi in output:
+        mol = Chem.MolFromInchi(inchi)
+        if mol is not None:
+            output_smiles.append(Chem.MolToSmiles(mol))
+    return output_smiles

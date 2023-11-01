@@ -26,12 +26,12 @@ def generate_molecules_with_surge(formula: str, to_avoid: Iterable[int] = frozen
         command = [str(surge_path), '-S', '-B' + ','.join(map(str, to_avoid)), formula]
         with open(error_file, 'w') as fe, Popen(command, stderr=fe, stdout=PIPE) as proc:
             for line in proc.stdout:
-                yield line.strip()
+                yield line.decode().strip()
         if proc.returncode != 0:
             raise ValueError(f'Command: {" ".join(command)}\nSTDERR: {error_file.read_text()}')
 
 
-def get_random_selection_with_surge(formula: str, to_select: int | float, seed: int = 1, **kwargs) -> list[str]:
+def get_random_selection_with_surge(formula: str, to_select: int | float, seed: int = 1, **kwargs) -> tuple[list[str], int]:
     """Get only the top fraction of molecules generated with surge
 
     Keyword arguments are passed to :meth:`generate_molecules_with_surge`
@@ -41,7 +41,8 @@ def get_random_selection_with_surge(formula: str, to_select: int | float, seed: 
         to_select: Maximum number or fraction to return
         seed: Random number seed
     Returns:
-        List of top molecules
+        - List of top molecules
+        - Total generated
     """
 
     get_fraction = to_select < 1
@@ -52,10 +53,12 @@ def get_random_selection_with_surge(formula: str, to_select: int | float, seed: 
 
     # Start the list
     output = []
-    for count, smiles in enumerate(mol_gen):
+    count = 0
+    for smiles in mol_gen:
+        count += 1
         score = rng.random()
         if len(output) < (count * to_select if get_fraction else to_select):
             heapq.heappush(output, (score, smiles))
         else:
             heapq.heappushpop(output, (score, smiles))
-    return output
+    return output, count
