@@ -3,6 +3,9 @@ from tempfile import TemporaryDirectory
 from subprocess import Popen, PIPE
 from typing import Iterable
 from pathlib import Path
+import heapq
+
+import numpy as np
 
 surge_path = Path(__file__).parent / '../bin/surge'
 
@@ -26,3 +29,33 @@ def generate_molecules_with_surge(formula: str, to_avoid: Iterable[int] = frozen
                 yield line.strip()
         if proc.returncode != 0:
             raise ValueError(f'Command: {" ".join(command)}\nSTDERR: {error_file.read_text()}')
+
+
+def get_random_selection_with_surge(formula: str, to_select: int | float, seed: int = 1, **kwargs) -> list[str]:
+    """Get only the top fraction of molecules generated with surge
+
+    Keyword arguments are passed to :meth:`generate_molecules_with_surge`
+
+    Args:
+        formula: Molecular formula to generate
+        to_select: Maximum number or fraction to return
+        seed: Random number seed
+    Returns:
+        List of top molecules
+    """
+
+    get_fraction = to_select < 1
+
+    # Make the generator for smiles and random numbers
+    mol_gen = generate_molecules_with_surge(formula, **kwargs)
+    rng = np.random.default_rng(seed)
+
+    # Start the list
+    output = []
+    for count, smiles in enumerate(mol_gen):
+        score = rng.random()
+        if len(output) < (count * to_select if get_fraction else to_select):
+            heapq.heappush(output, (score, smiles))
+        else:
+            heapq.heappushpop(output, (score, smiles))
+    return output
