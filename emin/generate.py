@@ -61,4 +61,7 @@ def get_random_selection_with_surge(formula: str, to_select: int | float, seed: 
             heapq.heappush(output, (score, smiles))
         else:
             heapq.heappushpop(output, (score, smiles))
+
+    # Unpack the answers
+    output = [x[1] for x in output]
     return output, count

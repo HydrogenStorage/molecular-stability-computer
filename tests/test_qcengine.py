@@ -1,16 +1,19 @@
 """Test computing the atomizaton energy of a molecule"""
-from qcelemental.models.procedures import QCInputSpecification
 
-from emin.qcengine import generate_xyz, relax_molecule
+from pytest import mark
+from emin.qcengine import generate_xyz, relax_molecule, compute_energy, get_qcengine_spec
 
 
-def test_methane():
+@mark.parametrize('level', ['xtb'])
+def test_methane(level):
     xyz = generate_xyz('C')
-    spec = QCInputSpecification(
-        driver='gradient',
-        model={'method': 'GFN2-xTB'},
-        keywords={"accuracy": 0.05}
-    )
-    result = relax_molecule(xyz, 'xtb', spec)
-    assert result.success
-    assert result.energies[-1]
+    code, spec = get_qcengine_spec(level)
+
+    # Single point energy
+    eng_result = compute_energy(xyz, code, spec)
+    assert eng_result.success
+
+    # Relaxation
+    opt_result = relax_molecule(xyz, code, spec)
+    assert opt_result.success
+    assert opt_result.energies[-1] < eng_result.return_result

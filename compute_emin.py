@@ -1,5 +1,7 @@
 """Compute the E_min of a target molecule"""
 from concurrent.futures import Future, as_completed
+from csv import DictReader
+from functools import partial, update_wrapper
 from argparse import ArgumentParser
 from pathlib import Path
 import logging
@@ -29,6 +31,8 @@ def get_key(smiles: str) -> str:
 if __name__ == "__main__":
     # Parse arguments
     parser = ArgumentParser()
+    parser.add_argument('--level', default='xtb', help='Accuracy level at which to compute energies')
+    parser.add_argument('--no-relax', action='store_true', help='Skip relaxing the molecular structure')
     parser.add_argument('--surge-amount', type=float,
                         help='Maximum number or fraction of molecules to generate from Surge. Set to 0 or less to disable surge. Default is to run all')
     parser.add_argument('molecule', help='SMILES or InChI of the target molecule')
@@ -59,25 +63,28 @@ if __name__ == "__main__":
     logger.setLevel(logging.INFO)
     our_key = Chem.MolToInchiKey(mol)
     logger.info(f'Starting E_min run for {args.molecule} (InChI Key: {our_key}) in {out_dir}')
+    logger.info(f'Running accuracy level: {args.level}. Relaxation: {not args.no_relax}')
 
     # Start Parsl
     config = Config(
         executors=[HighThroughputExecutor(max_workers=1, address='127.0.0.1')]
     )
     parsl.load(config)
-    run_app = python_app(run_molecule)
+    pinned_fun = partial(run_molecule, level=args.level, relax=not args.no_relax)
+    update_wrapper(pinned_fun, run_molecule)
+    run_app = python_app(pinned_fun)
     logger.info('Started Parsl and created the app to be run')
 
     # Load any previous computations
     energy_file: Path = out_dir / 'energies.csv'
     known_energies = {}
     if not energy_file.exists():
-        energy_file.write_text('inchi_key,smiles,energy\n')
+        energy_file.write_text('inchi_key,smiles,level,relax,energy\n')
     with energy_file.open() as fp:
-        fp.readline()  # Skip the header
-        for line in fp:
-            key, _, our_energy = line.strip().split(",")
-            known_energies[key] = float(our_energy)
+        reader = DictReader(fp)
+        for row in reader:
+            if row['level'] == args.level and row['relax'] != str(args.no_relax):
+                known_energies[row['inchi_key']] = float(row['energy'])
     logger.info(f'Loaded {len(known_energies)} energies from previous runs')
 
     # Open the output files
@@ -85,25 +92,28 @@ if __name__ == "__main__":
     with gzip.open(result_file, 'at') as fr, energy_file.open('a') as fe:
         # Make utility functions
         def _store_result(new_key, new_smiles, new_energy, result):
-            known_energies[new_key] = new_energy
-            print(result.json(), file=fr)
-            print(f'{new_key},{new_smiles},{new_energy}', file=fe)
+            if result is None or result.success:
+                known_energies[new_key] = new_energy
+                print(f'{new_key},{new_smiles},{args.level},{not args.no_relax},{new_energy}', file=fe)
+            if result is not None:
+                print(result.json(), file=fr)
 
-        def _run_if_needed(smiles: str) -> tuple[bool, float | Future]:
+
+        def _run_if_needed(my_smiles: str) -> tuple[bool, float | Future]:
             """Get the energy either by looking up result or running a new computation
 
             Returns:
                 - Whether the energy is done now
                 - Either the energy or a future with the label "key" associated with it
             """
-            key = get_key(smiles)
-            if key not in known_energies:
-                future = run_app(Chem.MolToSmiles(mol))
-                future.key = key
-                future.smiles = smiles
+            my_key = get_key(my_smiles)
+            if my_key not in known_energies:
+                future = run_app(my_smiles)
+                future.key = my_key
+                future.smiles = my_smiles
                 return False, future
             else:
-                return True, known_energies[key]
+                return True, known_energies[my_key]
 
         # Start by running our molecule
         our_smiles = Chem.MolToSmiles(mol)
@@ -132,11 +142,12 @@ if __name__ == "__main__":
         # Wait for the results to finish
         logger.info(f'Waiting for {len(futures)} computations to finish')
 
-        def _process_futures(my_futures: list[Future]) -> int:
+        def _process_futures(my_futures: list[Future], warnings: bool = True) -> int:
             my_failures = 0
             for future in as_completed(my_futures):
                 if future.exception() is not None:
-                    logger.warning(f'Failure running {future.key}: {future.exception()}')
+                    if warnings:
+                        logger.warning(f'Failure running {future.key}: {future.exception()}')
                     my_failures += 1
                 else:
                     energy, result = future.result()
@@ -158,7 +169,7 @@ if __name__ == "__main__":
             else:
                 logger.info(f'Selecting a random subset from Surge molecules. Amount to select: {args.surge_amount}')
                 mol_list, total = get_random_selection_with_surge(formula, to_select=args.surge_amount)
-                logger.info(f'Selected {len(mol_list)} molecules out of {total}')
+                logger.info(f'Selected {len(mol_list)} molecules out of {total} created by Surge. ({len(mol_list) / total * 100:.2g}%)')
 
             # Run each
             surge_count = 0
@@ -172,7 +183,7 @@ if __name__ == "__main__":
                     futures.append(result)
             logger.info(f'Generated {surge_count} molecules and submitted {len(futures)} to run')
 
-            failures = _process_futures(futures)
+            failures = _process_futures(futures, warnings=False)
             logger.info(f'Ran {len(futures)} molecules from Surge. {failures} failed.')
 
         logger.info(f'Final E_min compared against {len(known_energies)} molecules: {(our_energy - min(known_energies.values())) * 1000: .1f} mHa')
