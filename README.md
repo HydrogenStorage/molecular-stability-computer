@@ -1,4 +1,5 @@
 # Molecular Stability Computer
+[![CI](https://github.com/HydrogenStorage/molecular-stability-computer/actions/workflows/python-app.yml/badge.svg)](https://github.com/HydrogenStorage/molecular-stability-computer/actions/workflows/python-app.yml)
 
 Estimate the synthesizability of a molecule by assessing its stability relative to other molecules.
 Computes the E<sub>min</sub> metric proposed by Lee et al., which is the difference between the energy of a molecule 
