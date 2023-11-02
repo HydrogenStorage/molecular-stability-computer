@@ -1,13 +1,16 @@
 """Compute the E_min of a target molecule"""
-from concurrent.futures import Future, as_completed
-from csv import DictReader
 from functools import partial, update_wrapper
+from concurrent.futures import Future
 from argparse import ArgumentParser
+from threading import Thread
+from csv import DictReader
 from pathlib import Path
+from queue import Queue
 import logging
 import gzip
 import json
 import sys
+from typing import Iterable
 
 import parsl
 from parsl import Config, HighThroughputExecutor, python_app
@@ -35,6 +38,8 @@ if __name__ == "__main__":
     parser = ArgumentParser()
     parser.add_argument('--level', default='xtb', help='Accuracy level at which to compute energies')
     parser.add_argument('--no-relax', action='store_true', help='Skip relaxing the molecular structure')
+    parser.add_argument('--num-parallel', default=10000, type=int,
+                        help='Maximum number of chemistry computations to run at the same time')
     parser.add_argument('--compute-config',
                         help='Path to the file defining the Parsl configuration. Configuration should be in variable named ``config``')
     parser.add_argument('--surge-amount', type=float,
@@ -144,36 +149,50 @@ if __name__ == "__main__":
         pubchem = get_molecules_from_pubchem(formula)
         logger.info(f'Pulled {len(pubchem)} molecules for {formula} from PubChem')
 
-        # Submit them all
-        futures = []
-        failures = 0
-        for smiles in pubchem:
+        # Evaluate a maximum number of them at a time
+        future_queue: Queue[Future | None] = Queue(maxsize=args.num_parallel)  # Only holds a certain number at a time
+
+        def _submit_all(my_mol_list: Iterable[str], warnings: bool = False):
+            """Run all molecules and write future to ``future_queue``"""
+            count = 0
             try:
-                is_done, result = _run_if_needed(smiles)
-                if not is_done:
-                    futures.append(result)
-            except ValueError:
-                logger.warning(f'Failed to parse SMILES from PubChem: {smiles}')
-                failures += 1
+                for my_smiles in my_mol_list:
+                    try:
+                        is_done, result = _run_if_needed(my_smiles)
+                        if not is_done:
+                            count += 1
+                            future_queue.put(result)
+                    except ValueError:
+                        if warnings:
+                            logger.warning(f'Failed to parse SMILES: {my_smiles}')
+                logger.info(f'Finished submitting {count} molecules to run')
+            finally:
+                future_queue.put(None)  # Mark that we are done
 
-        # Wait for the results to finish
-        logger.info(f'Waiting for {len(futures)} computations to finish')
+        # Submit them all
+        submit_thread = Thread(target=_submit_all, args=(pubchem,))
+        submit_thread.start()
 
-        def _process_futures(my_futures: list[Future], warnings: bool = True) -> int:
-            my_failures = 0
-            for future in as_completed(my_futures):
+        def _process_futures(warnings: bool = True) -> int:
+            """Read futures from the queue until receiving the ``None`` value marking the end
+
+            Args:
+                warnings: Whether to print warnings
+            """
+            successes = 0
+            while (future := future_queue.get()) is not None:  # Loop until we receive the end value
                 if future.exception() is not None:
                     if warnings:
                         logger.warning(f'Failure running {future.key}: {future.exception()}')
-                    my_failures += 1
                 else:
                     energy, result = future.result()
+                    successes += 1
                     _store_result(future.key, future.smiles, energy, result)
-            return my_failures
+            return successes
 
-        failures = _process_futures(futures)
-
-        logger.info(f'Successfully ran {len(pubchem) - failures}/{len(pubchem)} molecules from PubChem')
+        success_count = _process_futures(warnings=True)
+        submit_thread.join()
+        logger.info(f'Successfully ran {success_count} molecules from PubChem')
         logger.info(f'Emin of molecule compared to PubChem: {(our_energy - min(known_energies.values())) * 1000:.1f} mHa')
 
         # Test molecules from surge
@@ -188,19 +207,10 @@ if __name__ == "__main__":
                 mol_list, total = get_random_selection_with_surge(formula, to_select=args.surge_amount)
                 logger.info(f'Selected {len(mol_list)} molecules out of {total} created by Surge. ({len(mol_list) / total * 100:.2g}%)')
 
-            # Run each
-            surge_count = 0
-            current_min = min(known_energies.values())
-
-            futures = []
-            for smiles in mol_list:
-                surge_count += 1
-                is_done, result = _run_if_needed(smiles)
-                if not is_done:
-                    futures.append(result)
-            logger.info(f'Generated {surge_count} molecules and submitted {len(futures)} to run')
-
-            failures = _process_futures(futures, warnings=False)
-            logger.info(f'Ran {len(futures)} molecules from Surge. {failures} failed.')
+            # Run them all
+            submit_thread = Thread(target=_submit_all, args=(mol_list, False))
+            submit_thread.start()
+            success_count = _process_futures(warnings=False)
+            logger.info(f'Completed {success_count} molecules from Surge')
 
         logger.info(f'Final E_min compared against {len(known_energies)} molecules: {(our_energy - min(known_energies.values())) * 1000: .1f} mHa')
