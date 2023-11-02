@@ -3,7 +3,9 @@ from rdkit import Chem
 import requests
 
 
-def get_molecules_from_pubchem(formula: str, neutral_only: bool = True, ignore_isotopes: bool = True) -> list[str]:
+def get_molecules_from_pubchem(formula: str,
+                               neutral_only: bool = True,
+                               ignore_isotopes: bool = True) -> list[str]:
     """Get molecules from PubChem that share the same formula
 
     Args:
@@ -36,3 +38,22 @@ def get_molecules_from_pubchem(formula: str, neutral_only: bool = True, ignore_i
             if '.' not in smiles:  # Skip molecules broken into two parts
                 output_smiles.append(smiles)
     return output_smiles
+
+
+def get_inchi_keys_from_pubchem(formula: str, retries: int = 5) -> set[str]:
+    """Get the InChI keys of all molecules in PubChem with a certain formula
+
+    Args:
+        formula: Formula in question
+        retries: How many retries to attempt
+    Returns:
+        List of unique InChI keys
+    """
+    for _ in range(retries):
+        try:
+            res = requests.get(f'https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/fastformula/{formula}/property/InChIKey/TXT')
+            return set(res.content.decode().split())
+        except (ConnectionError, requests.ReadTimeout):
+            continue
+    else:
+        raise ValueError('Connection to PubChem failed')
