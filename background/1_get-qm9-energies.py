@@ -4,6 +4,8 @@ from argparse import ArgumentParser
 from pathlib import Path
 import logging
 import sys
+from queue import Queue
+from threading import Thread
 
 import pandas as pd
 import parsl
@@ -64,17 +66,22 @@ if __name__ == "__main__":
             logger.info(f'{len(already_done)} energies have already been computed')
 
             # Submit what has not
-            futures: list[tuple[str, Future]] = []
-            for key, smiles in zip(qm9['inchi_key'], qm9['smiles_1']):
-                if key not in already_done:
-                    future = run_app(smiles, level, relax)
-                    futures.append((key, future))
-            logger.info(f'Submitted {len(futures)} computations to run')
+            futures: Queue[tuple[str, Future] | None] = Queue(maxsize=10000)
+
+            def _submit_all():
+                for key, smiles in zip(qm9['inchi_key'], qm9['smiles_1']):
+                    if key not in already_done:
+                        future = run_app(smiles, level, relax)
+                        futures.put((key, future))
+                futures.put(None)
+            submit_thread = Thread(_submit_all)
+            submit_thread.start()
 
             # Write the results as they come in
             success = 0
             with out_path.open('a') as fp:
-                for key, future in futures:
+                while (item := futures.get()) is not None:
+                    key, future = item
                     if future.exception() is None:
                         success += 1
                         energy, _ = future.result()
