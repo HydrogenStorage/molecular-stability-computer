@@ -38,6 +38,7 @@ if __name__ == "__main__":
     parser = ArgumentParser()
     parser.add_argument('--level', default='xtb', help='Accuracy level at which to compute energies')
     parser.add_argument('--no-relax', action='store_true', help='Skip relaxing the molecular structure')
+    parser.add_argument('--skip-store', action='store_true', help='Skip storing the full QCEngine record')
     parser.add_argument('--num-parallel', default=10000, type=int,
                         help='Maximum number of chemistry computations to run at the same time')
     parser.add_argument('--compute-config',
@@ -118,7 +119,7 @@ if __name__ == "__main__":
                 known_energies[new_key] = new_energy
                 print(f'{new_key},{new_smiles},{args.level},{not args.no_relax},{new_energy},{new_runtime},{json.dumps(xyz)}', file=fe)
 
-            if new_result is not None:
+            if new_result is not None and not args.skip_store:
                 print(new_result.json(), file=fr)
 
         def _run_if_needed(my_smiles: str) -> tuple[bool, float | Future]:
