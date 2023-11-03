@@ -94,7 +94,7 @@ if __name__ == "__main__":
     energy_file: Path = out_dir / 'energies.csv'
     known_energies = {}
     if not energy_file.exists():
-        energy_file.write_text('inchi_key,smiles,level,relax,energy,xyz\n')
+        energy_file.write_text('inchi_key,smiles,level,relax,energy,runtime,xyz\n')
     with energy_file.open() as fp:
         reader = DictReader(fp)
         for row in reader:
@@ -106,7 +106,7 @@ if __name__ == "__main__":
     result_file = out_dir / 'results.json.gz'
     with gzip.open(result_file, 'at') as fr, energy_file.open('a') as fe:
         # Make utility functions
-        def _store_result(new_key, new_smiles, new_energy, new_result: OptimizationResult | AtomicResult | None):
+        def _store_result(new_key, new_smiles, new_energy, new_runtime, new_result: OptimizationResult | AtomicResult | None):
             # Get the XYZ
             xyz = None
             if isinstance(new_result, OptimizationResult):
@@ -116,7 +116,7 @@ if __name__ == "__main__":
 
             if new_result is None or new_result.success:
                 known_energies[new_key] = new_energy
-                print(f'{new_key},{new_smiles},{args.level},{not args.no_relax},{new_energy},{json.dumps(xyz)}', file=fe)
+                print(f'{new_key},{new_smiles},{args.level},{not args.no_relax},{new_energy},{new_runtime},{json.dumps(xyz)}', file=fe)
 
             if new_result is not None:
                 print(new_result.json(), file=fr)
@@ -141,8 +141,8 @@ if __name__ == "__main__":
         our_smiles = Chem.MolToSmiles(mol)
         is_done, our_energy = _run_if_needed(our_smiles)
         if not is_done:
-            our_energy, result = our_energy.result()
-            _store_result(our_key, our_smiles, our_energy, result)
+            our_energy, runtime, result = our_energy.result()
+            _store_result(our_key, our_smiles, our_energy, runtime, result)
         logger.info(f'Target molecule has an energy of {our_energy:.3f} Ha')
 
         # Gather molecules from PubChem
@@ -185,9 +185,9 @@ if __name__ == "__main__":
                     if warnings:
                         logger.warning(f'Failure running {future.key}: {future.exception()}')
                 else:
-                    energy, result = future.result()
+                    energy, runtime, result = future.result()
                     successes += 1
-                    _store_result(future.key, future.smiles, energy, result)
+                    _store_result(future.key, future.smiles, energy, runtime, result)
             return successes
 
         success_count = _process_futures(warnings=True)
