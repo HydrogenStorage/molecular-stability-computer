@@ -3,6 +3,7 @@
 Includes functions to be run remotely and other utilities
 """
 from pathlib import Path
+from time import perf_counter
 
 from parsl import Config
 from qcelemental.models import AtomicResult
@@ -11,7 +12,7 @@ from qcelemental.models.procedures import OptimizationResult
 from emin.qcengine import generate_xyz, relax_molecule, get_qcengine_spec, compute_energy, evaluate_mmff94
 
 
-def run_molecule(smiles: str, level: str, relax: bool = True) -> tuple[float, AtomicResult | OptimizationResult | None]:
+def run_molecule(smiles: str, level: str, relax: bool = True) -> tuple[float, float, AtomicResult | OptimizationResult | None]:
     """Compute the energy of a molecule
 
     Args:
@@ -20,12 +21,15 @@ def run_molecule(smiles: str, level: str, relax: bool = True) -> tuple[float, At
         relax: Whether to relax the molecule
     Returns:
         - Energy. ``None`` if the computation failed
+        - Runtime
         - Complete record of the optimization
     """
 
+    start_time = perf_counter()
+
     # Special case: MMFF94
     if level == 'mmff94':
-        return evaluate_mmff94(smiles, relax), None
+        return evaluate_mmff94(smiles, relax), perf_counter() - start_time, None
 
     # Make a xTB spec
     code, spec = get_qcengine_spec(level)
@@ -42,10 +46,10 @@ def run_molecule(smiles: str, level: str, relax: bool = True) -> tuple[float, At
         if result.success:
             energy = result.energies[-1]
 
-        return energy, result
+        return energy, perf_counter() - start_time, result
     else:
         result = compute_energy(xyz, code, spec)
-        return result.return_result, result
+        return result.return_result, perf_counter() - start_time, result
 
 
 def load_config(path: str | Path, var_name: str = 'config') -> Config:

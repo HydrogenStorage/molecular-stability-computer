@@ -21,7 +21,7 @@ config = Config(
                 nodes_per_block=128,
                 init_blocks=1,
                 min_blocks=1,
-                max_blocks=1,
+                max_blocks=4,
                 scheduler_options='#COBALT --attrs enable_ssh=1',
                 # Command to be run before starting a worker, such as:
                 # 'module load Anaconda; source activate parsl_env'.
