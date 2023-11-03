@@ -74,7 +74,7 @@ if __name__ == "__main__":
                         future = run_app(smiles, level, relax)
                         futures.put((key, future))
                 futures.put(None)
-            submit_thread = Thread(_submit_all)
+            submit_thread = Thread(target=_submit_all)
             submit_thread.start()
 
             # Write the results as they come in
