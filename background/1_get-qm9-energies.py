@@ -61,8 +61,10 @@ if __name__ == "__main__":
             if out_path.exists():
                 with out_path.open() as fp:
                     for line in fp:
-                        key, _ = line.split(",")
+                        key, _, _ = line.split(",")
                         already_done.add(key)
+            else:
+                out_path.write_text('key,runtime,energy\n')
             logger.info(f'{len(already_done)} energies have already been computed')
 
             # Submit what has not
@@ -84,6 +86,6 @@ if __name__ == "__main__":
                     key, future = item
                     if future.exception() is None:
                         success += 1
-                        energy, _ = future.result()
-                        print(f'{key},{energy}', file=fp)
+                        energy, runtime, _ = future.result()
+                        print(f'{key},{runtime},{energy}', file=fp)
             logger.info(f'Completed {success} successfully')
