@@ -1,18 +1,18 @@
 """Compute the E_min of a target molecule"""
 from functools import partial, update_wrapper
 from concurrent.futures import Future
-from threading import Semaphore, Lock
 from argparse import ArgumentParser
+from threading import Semaphore
+from typing import Iterable
 from csv import DictReader
 from pathlib import Path
 import logging
 import gzip
 import json
 import sys
-from typing import Iterable
 
 import parsl
-from parsl import Config, HighThroughputExecutor, python_app
+from parsl import Config, HighThroughputExecutor, python_app, ThreadPoolExecutor
 from qcelemental.models import OptimizationResult, AtomicResult
 from rdkit.Chem import rdMolDescriptors
 from rdkit import Chem, RDLogger
@@ -84,6 +84,8 @@ if __name__ == "__main__":
         logger.info(f'Loading Parsl configuration from {args.compute_config}')
         config = load_config(args.compute_config)
 
+    config.executors = list(config.executors) + [ThreadPoolExecutor(max_threads=1, label='writer')]  # Add a process that only writes
+
     dfk = parsl.load(config)
     pinned_fun = partial(run_molecule, level=args.level, relax=not args.no_relax)
     update_wrapper(pinned_fun, run_molecule)
@@ -103,25 +105,16 @@ if __name__ == "__main__":
     logger.info(f'Loaded {len(known_energies)} energies from previous runs')
 
     # Evaluate a maximum number of them at a time
-    submit_controller = Semaphore(args.num_parallel)  # Control the maximum number of submissions
+    submit_controller = Semaphore(max(args.num_parallel, 2))  # Control the maximum number of submissions
 
     # Open the output files
     result_file = out_dir / 'results.json.gz'
-    write_lock = Lock()
     with gzip.open(result_file, 'at') as fr, energy_file.open('a') as fe:
         # Make utility functions
-        def _result_callback(new_key, new_smiles, new_future: Future, warnings: bool = True, save_result: bool = False):
-            # Mark that a result has completed
-            submit_controller.release()
-
-            # If failure, print warning (if user says so) and exit
-            if new_future.exception() is not None:
-                if warnings:
-                    logger.warning(f'Failure running {new_key}: {new_future.exception()}')
-                return
-
+        @python_app(executors=['writer'])  # Runs on a single, dedicated writing thread
+        def write_result(new_key: str, new_smiles: str, compute_result: Future, save_result: bool = False):
             # Resolve the future
-            new_energy, new_runtime, new_result = new_future.result()
+            new_energy, new_runtime, new_result = compute_result
 
             # Get the XYZ
             xyz = None
@@ -131,14 +124,13 @@ if __name__ == "__main__":
                 xyz = new_result.molecule.to_string('xyz')
 
             # Always save the energy and such
-            with write_lock:  # Ensure only one result writes at a time
-                if new_result is None or new_result.success:
-                    known_energies[new_key] = new_energy
-                    print(f'{new_key},{new_smiles},{args.level},{not args.no_relax},{new_energy},{new_runtime},{json.dumps(xyz)}', file=fe)
+            if new_result is None or new_result.success:
+                known_energies[new_key] = new_energy
+                print(f'{new_key},{new_smiles},{args.level},{not args.no_relax},{new_energy},{new_runtime},{json.dumps(xyz)}', file=fe)
 
-                # Save the result only if the user wants
-                if new_result is not None and save_result:
-                    print(new_result.json(), file=fr)
+            # Save the result only if the user wants
+            if new_result is not None and save_result:
+                print(new_result.json(), file=fr)
 
         def _run_if_needed(my_smiles: str) -> tuple[bool, str, float | Future]:
             """Get the energy either by looking up result or running a new computation
@@ -160,7 +152,7 @@ if __name__ == "__main__":
         our_smiles = Chem.MolToSmiles(mol)
         is_done, our_key, our_energy = _run_if_needed(our_smiles)
         if not is_done:
-            _result_callback(our_key, our_smiles, our_energy, warnings=True, save_result=True)
+            our_write = write_result(our_key, our_smiles, our_energy, save_result=True)
             our_energy, runtime, result = our_energy.result()
         logger.info(f'Target molecule has an energy of {our_energy:.3f} Ha')
 
@@ -185,14 +177,13 @@ if __name__ == "__main__":
                         logger.warning(f'Failed to parse SMILES: {my_smiles}')
                     continue
 
-                # Add callback if not done
+                # Add the write app, if needed
                 if not my_is_done:
-                    my_result.add_done_callback(lambda x: _result_callback(my_key, my_smiles, my_result, warnings=my_warnings, save_result=my_save_results))
+                    my_result.add_done_callback(lambda x: submit_controller.release())
+                    write_result(my_key, my_smiles, my_result, save_result=my_save_results)
 
             # Block until all finish
-            print(dfk.tasks)
             dfk.wait_for_current_tasks()
-
             return count
 
         # Run them all
