@@ -4,19 +4,17 @@ from concurrent.futures import Future
 from argparse import ArgumentParser
 from threading import Semaphore
 from typing import Iterable
-from csv import DictReader
 from pathlib import Path
 import logging
 import gzip
-import json
 import sys
 
 import parsl
 from parsl import Config, HighThroughputExecutor, python_app, ThreadPoolExecutor
-from qcelemental.models import OptimizationResult, AtomicResult
 from rdkit.Chem import rdMolDescriptors
 from rdkit import Chem, RDLogger
 
+from emin.app import load_database, write_result
 from emin.generate import generate_molecules_with_surge, get_random_selection_with_surge
 from emin.parsl import run_molecule, load_config
 from emin.source import get_molecules_from_pubchem
@@ -84,50 +82,26 @@ if __name__ == "__main__":
         logger.info(f'Loading Parsl configuration from {args.compute_config}')
         config = load_config(args.compute_config)
 
+    compute_execs = [e.label for e in config.executors]
     config.executors = list(config.executors) + [ThreadPoolExecutor(max_threads=1, label='writer')]  # Add a process that only writes
 
     dfk = parsl.load(config)
     pinned_fun = partial(run_molecule, level=args.level, relax=not args.no_relax)
     update_wrapper(pinned_fun, run_molecule)
-    run_app = python_app(pinned_fun)
+    run_app = python_app(pinned_fun, executors=compute_execs)
     logger.info('Started Parsl and created the app to be run')
 
     # Load any previous computations
-    energy_file: Path = out_dir / 'energies.csv'
-    known_energies = {}
-    if not energy_file.exists():
-        energy_file.write_text('inchi_key,smiles,level,relax,energy,runtime,xyz\n')
-    with energy_file.open() as fp:
-        reader = DictReader(fp)
-        for row in reader:
-            if row['level'] == args.level and row['relax'] != str(args.no_relax):
-                known_energies[row['inchi_key']] = float(row['energy'])
+    energy_file, known_energies = load_database(out_dir, args.level, not args.no_relax)
     logger.info(f'Loaded {len(known_energies)} energies from previous runs')
 
     # Open the output files
     result_file = out_dir / 'results.json.gz'
     with gzip.open(result_file, 'at') as fr, energy_file.open('a') as fe:
         # Make utility functions
-        @python_app(executors=['writer'])  # Runs on a single, dedicated writing thread
-        def write_result(new_key: str, new_smiles: str, compute_result: Future, save_result: bool = False):
-            # Resolve the future
-            new_energy, new_runtime, new_result = compute_result
-
-            # Get the XYZ
-            xyz = None
-            if isinstance(new_result, OptimizationResult):
-                xyz = new_result.final_molecule.to_string('xyz')
-            elif isinstance(new_result, AtomicResult):
-                xyz = new_result.molecule.to_string('xyz')
-
-            # Always save the energy and such
-            if new_result is None or new_result.success:
-                known_energies[new_key] = new_energy
-                print(f'{new_key},{new_smiles},{args.level},{not args.no_relax},{new_energy},{new_runtime},{json.dumps(xyz)}', file=fe)
-
-            # Save the result only if the user wants
-            if new_result is not None and save_result:
-                print(new_result.json(), file=fr)
+        write_fn = partial(write_result, relax=not args.no_relax, level=args.level, energy_database_fp=fe, record_fp=fr)
+        update_wrapper(write_fn, write_result)
+        write_app = python_app(write_fn, executors=['writer'])
 
         def _run_if_needed(my_smiles: str) -> tuple[bool, str, float | Future]:
             """Get the energy either by looking up result or running a new computation
@@ -148,8 +122,9 @@ if __name__ == "__main__":
         our_smiles = Chem.MolToSmiles(mol)
         is_done, our_key, our_energy = _run_if_needed(our_smiles)
         if not is_done:
-            our_write = write_result(our_key, our_smiles, our_energy, save_result=True)
+            our_write = write_app(our_key, our_smiles, our_energy, known_energies, save_result=True)
             our_energy, runtime, result = our_energy.result()
+            our_write.result()
         logger.info(f'Target molecule has an energy of {our_energy:.3f} Ha')
 
         # Gather molecules from PubChem
@@ -178,7 +153,7 @@ if __name__ == "__main__":
                 # Add the write app, if needed
                 if not my_is_done:
                     my_result.add_done_callback(lambda x: submit_controller.release())
-                    write_result(my_key, my_smiles, my_result, save_result=my_save_results)
+                    write_app(my_key, my_smiles, my_result, known_energies, save_result=my_save_results)
                 else:
                     submit_controller.release()  # We didn't create a future
 
