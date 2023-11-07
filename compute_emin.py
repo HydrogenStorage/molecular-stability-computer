@@ -183,7 +183,7 @@ if __name__ == "__main__":
 
             # Run them all
             before_count = len(known_energies)
-            submit_count = _submit_all(mol_list, my_warnings=False, my_save_results=args.skip_store)
+            submit_count = _submit_all(mol_list, my_warnings=False, my_save_results=not args.skip_store)
             success_count = len(known_energies) - before_count
             logger.info(f'Completed {success_count} molecules from Surge of {submit_count} submitted')
 
