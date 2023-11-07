@@ -104,9 +104,6 @@ if __name__ == "__main__":
                 known_energies[row['inchi_key']] = float(row['energy'])
     logger.info(f'Loaded {len(known_energies)} energies from previous runs')
 
-    # Evaluate a maximum number of them at a time
-    submit_controller = Semaphore(max(args.num_parallel, 2))  # Control the maximum number of submissions
-
     # Open the output files
     result_file = out_dir / 'results.json.gz'
     with gzip.open(result_file, 'at') as fr, energy_file.open('a') as fe:
@@ -142,7 +139,6 @@ if __name__ == "__main__":
             """
             my_key = get_key(my_smiles)
             if my_key not in known_energies:
-                submit_controller.acquire()  # Block until resources are freed by the callback
                 future = run_app(my_smiles)
                 return False, my_key, future
             else:
@@ -169,8 +165,10 @@ if __name__ == "__main__":
             count = 0
 
             # Submit all the molecules
+            submit_controller = Semaphore(max(args.num_parallel, 2))  # Control the maximum number of submissions
             for my_smiles in my_mol_list:
                 try:
+                    submit_controller.acquire()  # Block until resources are freed by the callback
                     my_is_done, my_key, my_result = _run_if_needed(my_smiles)
                 except ValueError:
                     if my_warnings:
@@ -181,6 +179,8 @@ if __name__ == "__main__":
                 if not my_is_done:
                     my_result.add_done_callback(lambda x: submit_controller.release())
                     write_result(my_key, my_smiles, my_result, save_result=my_save_results)
+                else:
+                    submit_controller.release()  # We didn't create a future
 
             # Block until all finish
             dfk.wait_for_current_tasks()
