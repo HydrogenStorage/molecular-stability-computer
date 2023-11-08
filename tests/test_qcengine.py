@@ -4,7 +4,7 @@ from pytest import mark
 from emin.qcengine import generate_xyz, relax_molecule, compute_energy, get_qcengine_spec
 
 
-@mark.parametrize('level', ['xtb'])
+@mark.parametrize('level', ['xtb', 'hf_sto-3g', 'b3lyp_def2-tzvpd'])
 def test_methane(level):
     xyz = generate_xyz('C')
     code, spec = get_qcengine_spec(level)
