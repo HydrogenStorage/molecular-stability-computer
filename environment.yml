@@ -14,7 +14,6 @@ dependencies:
 
 # Dependencies from the molecular design app
   - psi4==1.8=*py311*
-  - geometric
   - pydantic<2
   - qcengine
   - xtb-python
@@ -24,4 +23,5 @@ dependencies:
 # Pip packages for all of them
   - pip:
       - -e . 
+      - geometric
       - parsl>=1.*
