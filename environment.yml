@@ -1,10 +1,11 @@
 name: emin
 channels:
-  - defaults
   - conda-forge
+  - conda-forge/label/libint_dev
+  - defaults
 dependencies:
   # Core dependencies
-  - python==3.11.*
+  - python==3.11
   - scikit-learn>=1
   - jupyterlab
   - pytest
@@ -12,7 +13,8 @@ dependencies:
   - pip
 
 # Dependencies from the molecular design app
-  - geometric==0.9.*
+  - psi4==1.8=*py311*
+  - pydantic<2
   - qcengine
   - xtb-python
   - psutil
@@ -21,4 +23,5 @@ dependencies:
 # Pip packages for all of them
   - pip:
       - -e . 
+      - geometric>1
       - parsl>=1.*
