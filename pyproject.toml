@@ -18,7 +18,7 @@ requests = "^2.13.0"
 parsl = "^2023.10.23"
 qcengine = "^0.29.0"
 rdkit = "^2023.9.1"
-geometric = "^0.9"
+geometric = "^1"
 pytest = { version = "*", optional = true }
 pytest-cov = { version = "*", optional = true }
 
