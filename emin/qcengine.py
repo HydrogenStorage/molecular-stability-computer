@@ -23,6 +23,12 @@ def get_qcengine_spec(level_name: str) -> tuple[str, QCInputSpecification]:
             model={'method': 'GFN2-xTB'},
             keywords={"accuracy": 0.05}
         )
+    elif "_" in level_name:
+        method, basis = level_name.split("_")
+        return 'psi4', QCInputSpecification(
+            driver='gradient',
+            model={'method': method, 'basis': basis}
+        )
     else:
         raise ValueError(f'No such specification level: {level_name}')
 
