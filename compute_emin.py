@@ -123,8 +123,8 @@ if __name__ == "__main__":
         is_done, our_key, our_energy = _run_if_needed(our_smiles)
         if not is_done:
             our_write = write_app(our_key, our_smiles, our_energy, known_energies, save_result=True)
-            our_energy, runtime, result = our_energy.result()
-            our_write.result()
+            our_energy, runtime, xyz, result = our_energy.result()
+            our_write.result()  # Make sure we write
         logger.info(f'Target molecule has an energy of {our_energy:.3f} Ha')
 
         # Gather molecules from PubChem
