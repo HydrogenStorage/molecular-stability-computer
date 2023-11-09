@@ -137,7 +137,7 @@ if __name__ == "__main__":
             Returns:
                 Number submitted
             """
-            count = 0
+            count = 0  # Number of new computations
 
             # Submit all the molecules
             submit_controller = Semaphore(max(args.num_parallel, 2))  # Control the maximum number of submissions
@@ -152,6 +152,7 @@ if __name__ == "__main__":
 
                 # Add the write app, if needed
                 if not my_is_done:
+                    count += 1
                     my_result.add_done_callback(lambda x: submit_controller.release())
                     write_app(my_key, my_smiles, my_result, known_energies, save_result=my_save_results)
                 else:
