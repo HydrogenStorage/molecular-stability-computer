@@ -103,7 +103,7 @@ if __name__ == "__main__":
         update_wrapper(write_fn, write_result)
         write_app = python_app(write_fn, executors=['writer'])
 
-        def _run_if_needed(my_smiles: str) -> tuple[bool, str, float | Future]:
+        def _run_if_needed(my_smiles: str, my_save_results: bool = True) -> tuple[bool, str, float | Future]:
             """Get the energy either by looking up result or running a new computation
 
             Returns:
@@ -113,7 +113,7 @@ if __name__ == "__main__":
             """
             my_key = get_key(my_smiles)
             if my_key not in known_energies:
-                future = run_app(my_smiles)
+                future = run_app(my_smiles, return_full_record=my_save_results)
                 return False, my_key, future
             else:
                 return True, my_key, known_energies[my_key]
@@ -144,7 +144,7 @@ if __name__ == "__main__":
             for my_smiles in my_mol_list:
                 try:
                     submit_controller.acquire()  # Block until resources are freed by the callback
-                    my_is_done, my_key, my_result = _run_if_needed(my_smiles)
+                    my_is_done, my_key, my_result = _run_if_needed(my_smiles, my_save_results)
                 except ValueError:
                     if my_warnings:
                         logger.warning(f'Failed to parse SMILES: {my_smiles}')

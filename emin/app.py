@@ -36,7 +36,7 @@ def load_database(run_path: str | Path, level: str, relax: bool) -> tuple[Path, 
 
 
 def write_result(new_key: str, new_smiles: str,
-                 compute_result: tuple[float, float, OptimizationResult | AtomicResult | None],
+                 compute_result: tuple[float, float, str | None, OptimizationResult | AtomicResult | None],
                  known_energies: dict[str, float],
                  energy_database_fp: TextIO,
                  record_fp: TextIO,
@@ -57,19 +57,12 @@ def write_result(new_key: str, new_smiles: str,
         save_result: Whether to save the result log to disk
     """
     # Resolve the future
-    new_energy, new_runtime, new_result = compute_result
-
-    # Get the XYZ
-    xyz = None
-    if isinstance(new_result, OptimizationResult):
-        xyz = new_result.final_molecule.to_string('xyz')
-    elif isinstance(new_result, AtomicResult):
-        xyz = new_result.molecule.to_string('xyz')
+    new_energy, new_runtime, new_xyz, new_result = compute_result
 
     # Always save the energy and such
     if new_result is None or new_result.success:
         known_energies[new_key] = new_energy
-        print(f'{new_key},{new_smiles},{level},{relax},{new_energy},{new_runtime},{json.dumps(xyz)}', file=energy_database_fp)
+        print(f'{new_key},{new_smiles},{level},{relax},{new_energy},{new_runtime},{json.dumps(new_xyz)}', file=energy_database_fp)
 
     # Save the result only if the user wants
     if new_result is not None and save_result:
