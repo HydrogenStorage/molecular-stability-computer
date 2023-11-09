@@ -5,16 +5,25 @@ from pytest import mark
 from emin.parsl import run_molecule, load_config
 
 
-@mark.parametrize('level', ['xtb', 'mmff94'])
+@mark.parametrize('level', ['xtb', 'mmff94', 'hf_def2-svpd'])
 def test_run_function(level):
     # Run single point
-    energy, single_runtime, result = run_molecule('C', level, relax=False)
+    energy, single_runtime, xyz, result = run_molecule('C', level, relax=False)
     assert level == 'mmff94' or result.success  # MMFF94 does not use QCEngine
 
     # Run relaxed
-    relaxed_energy, relax_runtime, relaxed_result = run_molecule('C', level, relax=True)
+    relaxed_energy, relax_runtime, xyz, relaxed_result = run_molecule('C', level, relax=True)
     assert level == 'mmff94' or relaxed_result.energies[-1] == relaxed_energy
     assert relaxed_energy < energy
+
+    # Skip sending back the result
+    _, _, xyz, result = run_molecule('C', level, relax=True, return_full_record=False)
+    assert level == 'mmff94' or xyz is not None
+    assert result is None
+
+    _, _, xyz, result = run_molecule('C', level, relax=False, return_full_record=False)
+    assert level == 'mmff94' or xyz is not None
+    assert result is None
 
 
 def test_load_config():

@@ -18,7 +18,7 @@ def test_database(tmpdir):
     # Write to the database
     with energy_file.open('a') as fe, open(out_dir / 'records.json', 'w') as fr:
         # Write the result without a result
-        write_result('MOL1', 'H2O', (1., 2., None), known_energies,
+        write_result('MOL1', 'H2O', (1., 2., None, None), known_energies,
                      energy_database_fp=fe, record_fp=fr, relax=False, level='mmff94')
         assert len(known_energies) == 1
 
@@ -30,7 +30,7 @@ def test_database(tmpdir):
     records_path = out_dir / 'records.json'
     with energy_file.open('a') as fe, open(records_path, 'w') as fr:
         record = AtomicResult.parse_file(files_dir / 'water-no-relax.json')
-        write_result('MOL2', 'H2O', (1., 2., record), known_energies,
+        write_result('MOL2', 'H2O', (1., 2., record.molecule.to_string('xyz'), record), known_energies,
                      energy_database_fp=fe, record_fp=fr, relax=False, level='mmff94', save_result=True)
         assert len(known_energies) == 2
     assert records_path.read_text().startswith('{"id": null, "schema_name": "qcschema_output"')
@@ -39,7 +39,7 @@ def test_database(tmpdir):
     records_path = out_dir / 'records.json'
     with energy_file.open('a') as fe, open(records_path, 'w') as fr:
         record = OptimizationResult.parse_file(files_dir / 'water-relax.json')
-        write_result('MOL2', 'H2O', (1., 2., record), known_energies,
+        write_result('MOL2', 'H2O', (1., 2., record.final_molecule.to_string('xyz'), record), known_energies,
                      energy_database_fp=fe, record_fp=fr, relax=True, level='mmff94', save_result=True)
         assert len(known_energies) == 2
     assert records_path.read_text().startswith('{"id": null, "hash_index": null, "schema_name": "qcschema_optimization_output",')

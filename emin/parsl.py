@@ -12,7 +12,8 @@ from qcelemental.models.procedures import OptimizationResult
 from emin.qcengine import generate_xyz, relax_molecule, get_qcengine_spec, compute_energy, evaluate_mmff94
 
 
-def run_molecule(smiles: str, level: str, relax: bool = True) -> tuple[float, float, AtomicResult | OptimizationResult | None]:
+def run_molecule(smiles: str, level: str, relax: bool = True, return_full_record: bool = True) \
+        -> tuple[float, float, str | None, AtomicResult | OptimizationResult | None]:
     """Compute the energy of a molecule
 
     Args:
@@ -22,6 +23,7 @@ def run_molecule(smiles: str, level: str, relax: bool = True) -> tuple[float, fl
     Returns:
         - Energy. ``None`` if the computation failed
         - Runtime
+        - XYZ of molecule
         - Complete record of the optimization
     """
 
@@ -29,7 +31,7 @@ def run_molecule(smiles: str, level: str, relax: bool = True) -> tuple[float, fl
 
     # Special case: MMFF94
     if level == 'mmff94':
-        return evaluate_mmff94(smiles, relax), perf_counter() - start_time, None
+        return evaluate_mmff94(smiles, relax), perf_counter() - start_time, None, None
 
     # Make a xTB spec
     code, spec = get_qcengine_spec(level)
@@ -46,10 +48,10 @@ def run_molecule(smiles: str, level: str, relax: bool = True) -> tuple[float, fl
         if result.success:
             energy = result.energies[-1]
 
-        return energy, perf_counter() - start_time, result
+        return energy, perf_counter() - start_time, result.final_molecule.to_string('xyz'), result if return_full_record else None
     else:
         result = compute_energy(xyz, code, spec)
-        return result.return_result, perf_counter() - start_time, result
+        return result.return_result, perf_counter() - start_time, result.molecule.to_string('xyz'), result if return_full_record else None
 
 
 def load_config(path: str | Path, var_name: str = 'config') -> Config:
