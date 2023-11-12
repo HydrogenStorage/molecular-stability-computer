@@ -180,7 +180,7 @@ if __name__ == "__main__":
             else:
                 logger.info(f'Selecting a random subset from Surge molecules. Amount to select: {args.surge_amount}')
                 mol_list, total = get_random_selection_with_surge(formula, to_select=args.surge_amount)
-                logger.info(f'Selected {len(mol_list)} molecules out of {total} created by Surge. ({len(mol_list) / total * 100:.2g}%)')
+                logger.info(f'Selected {len(mol_list)} molecules out of {total} created by Surge. ({len(mol_list) / total * 100:.3g}%)')
 
             # Run them all
             before_count = len(known_energies)
