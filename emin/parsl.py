@@ -20,8 +20,9 @@ def run_molecule(smiles: str, level: str, relax: bool = True, return_full_record
         smiles: SMILES string of the molecule
         level: Level of accuracy to run
         relax: Whether to relax the molecule
+        return_full_record: Whether to return the full result record
     Returns:
-        - Energy. ``None`` if the computation failed
+        - Energy. ``inf`` if the computation failed
         - Runtime
         - XYZ of molecule
         - Complete record of the optimization
@@ -31,27 +32,34 @@ def run_molecule(smiles: str, level: str, relax: bool = True, return_full_record
 
     # Special case: MMFF94
     if level == 'mmff94':
-        return evaluate_mmff94(smiles, relax), perf_counter() - start_time, None, None
+        try:
+            return evaluate_mmff94(smiles, relax), perf_counter() - start_time, None, None
+        except ValueError:
+            return float('inf'), perf_counter() - start_time, None, None
 
-    # Make a xTB spec
+    # Make a QCengine spec
     code, spec = get_qcengine_spec(level)
 
     # Generate an initial structure
-    xyz = generate_xyz(smiles)
+    try:
+        xyz = generate_xyz(smiles)
+    except ValueError:
+        return float('inf'), perf_counter() - start_time, None, None
 
     if relax:
         # Relax, if requested
         result = relax_molecule(xyz, code, spec)
 
         # If the result was successful, get the energy
-        energy = None
+        energy = float('inf')
         if result.success:
             energy = result.energies[-1]
 
         return energy, perf_counter() - start_time, result.final_molecule.to_string('xyz'), result if return_full_record else None
     else:
         result = compute_energy(xyz, code, spec)
-        return result.return_result, perf_counter() - start_time, result.molecule.to_string('xyz'), result if return_full_record else None
+        energy = result.return_result if result.success else float('inf')
+        return energy, perf_counter() - start_time, result.molecule.to_string('xyz'), result if return_full_record else None
 
 
 def load_config(path: str | Path, var_name: str = 'config') -> Config:

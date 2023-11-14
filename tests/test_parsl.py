@@ -1,3 +1,4 @@
+import math
 from pathlib import Path
 
 from pytest import mark
@@ -30,3 +31,11 @@ def test_load_config():
     config_path = Path(__file__).parent / 'files/test-spec.py'
     config = load_config(config_path)
     assert config.executors[0].label == 'test'
+
+
+@mark.parametrize('level', ['mmff94', 'xtb'])
+def test_failure(level):
+    energy, time, xyz, _ = run_molecule('c1ccc2c3cc(cc2c1)CC3', level)
+    assert math.isinf(energy)
+    assert not math.isinf(time)
+    assert xyz is None

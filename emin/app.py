@@ -60,9 +60,8 @@ def write_result(new_key: str, new_smiles: str,
     new_energy, new_runtime, new_xyz, new_result = compute_result
 
     # Always save the energy and such
-    if new_result is None or new_result.success:
-        known_energies[new_key] = new_energy
-        print(f'{new_key},{new_smiles},{level},{relax},{new_energy},{new_runtime},{json.dumps(new_xyz)}', file=energy_database_fp)
+    known_energies[new_key] = new_energy
+    print(f'{new_key},{new_smiles},{level},{relax},{new_energy},{new_runtime},{json.dumps(new_xyz)}', file=energy_database_fp)
 
     # Save the result only if the user wants
     if new_result is not None and save_result:
