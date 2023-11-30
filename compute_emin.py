@@ -72,7 +72,7 @@ if __name__ == "__main__":
     logger.info(f'Starting E_min run for {args.molecule} (InChI Key: {our_key}) in {out_dir}')
     logger.info(f'Running accuracy level: {args.level}. Relaxation: {not args.no_relax}')
 
-    # Start Parsl
+    # Make the Parsl configuration
     if args.compute_config is None:
         logger.info('Using default Parsl configuration of a single worker on the local machine')
         config = Config(
@@ -84,8 +84,11 @@ if __name__ == "__main__":
 
     compute_execs = [e.label for e in config.executors]
     config.executors = list(config.executors) + [ThreadPoolExecutor(max_threads=1, label='writer')]  # Add a process that only writes
+    config.run_dir = str(out_dir / 'runinfo')
 
     dfk = parsl.load(config)
+
+
     pinned_fun = partial(run_molecule, level=args.level, relax=not args.no_relax)
     update_wrapper(pinned_fun, run_molecule)
     run_app = python_app(pinned_fun, executors=compute_execs)
