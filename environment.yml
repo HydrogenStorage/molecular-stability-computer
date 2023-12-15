@@ -6,8 +6,10 @@ channels:
 dependencies:
   # Core dependencies
   - python==3.11
+  - matplotlib
   - scikit-learn>=1
   - jupyterlab
+  - pandas
   - pytest
   - flake8
   - pip
