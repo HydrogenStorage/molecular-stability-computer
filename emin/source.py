@@ -1,4 +1,6 @@
 """Source molecules from PubChem"""
+from functools import lru_cache
+
 from rdkit import Chem
 import requests
 
@@ -40,6 +42,7 @@ def get_molecules_from_pubchem(formula: str,
     return output_smiles
 
 
+@lru_cache
 def get_inchi_keys_from_pubchem(formula: str, retries: int = 5) -> set[str]:
     """Get the InChI keys of all molecules in PubChem with a certain formula
 
@@ -52,6 +55,7 @@ def get_inchi_keys_from_pubchem(formula: str, retries: int = 5) -> set[str]:
     for _ in range(retries):
         try:
             res = requests.get(f'https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/fastformula/{formula}/property/InChIKey/TXT')
+            assert res.status_code == 200, f'PubChem failed with error code: {res.status_code}'
             return set(res.content.decode().split())
         except (ConnectionError, requests.ReadTimeout):
             continue
