@@ -3,6 +3,7 @@ from functools import partial, update_wrapper
 from concurrent.futures import Future
 from argparse import ArgumentParser
 from threading import Semaphore
+from time import perf_counter
 from typing import Iterable
 from pathlib import Path
 import logging
@@ -32,6 +33,7 @@ def get_key(smiles: str) -> str:
 
 if __name__ == "__main__":
     # Parse arguments
+    start_time = perf_counter()
     parser = ArgumentParser()
     parser.add_argument('--level', default='xtb', help='Accuracy level at which to compute energies')
     parser.add_argument('--no-relax', action='store_true', help='Skip relaxing the molecular structure')
@@ -191,3 +193,5 @@ if __name__ == "__main__":
             logger.info(f'Completed {success_count} molecules from Surge of {submit_count} submitted')
 
         logger.info(f'Final E_min compared against {len(known_energies)} molecules: {(our_energy - min(known_energies.values())) * 1000: .1f} mHa')
+
+        logger.info(f'Runtime: {perf_counter() - start_time:.2f}s')
