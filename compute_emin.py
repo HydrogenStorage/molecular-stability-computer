@@ -88,7 +88,6 @@ if __name__ == "__main__":
 
     dfk = parsl.load(config)
 
-
     pinned_fun = partial(run_molecule, level=args.level, relax=not args.no_relax)
     update_wrapper(pinned_fun, run_molecule)
     run_app = python_app(pinned_fun, executors=compute_execs)
