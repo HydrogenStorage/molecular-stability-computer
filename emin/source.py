@@ -42,7 +42,7 @@ def get_molecules_from_pubchem(formula: str,
     return output_smiles
 
 
-@lru_cache
+@lru_cache(maxsize=1024)
 def get_inchi_keys_from_pubchem(formula: str, retries: int = 5) -> set[str]:
     """Get the InChI keys of all molecules in PubChem with a certain formula
 
@@ -54,7 +54,10 @@ def get_inchi_keys_from_pubchem(formula: str, retries: int = 5) -> set[str]:
     """
     for _ in range(retries):
         try:
-            res = requests.get(f'https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/fastformula/{formula}/property/InChIKey/TXT')
+            res = requests.get(
+                f'https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/fastformula/{formula}/property/InChIKey/TXT',
+                timeout=60.
+            )
             assert res.status_code == 200, f'PubChem failed with error code: {res.status_code}'
             return set(res.content.decode().split())
         except (ConnectionError, requests.ReadTimeout):
