@@ -3,6 +3,7 @@ from functools import partial, update_wrapper
 from concurrent.futures import Future
 from argparse import ArgumentParser
 from threading import Semaphore
+from time import perf_counter
 from typing import Iterable
 from pathlib import Path
 import logging
@@ -32,6 +33,7 @@ def get_key(smiles: str) -> str:
 
 if __name__ == "__main__":
     # Parse arguments
+    start_time = perf_counter()
     parser = ArgumentParser()
     parser.add_argument('--level', default='xtb', help='Accuracy level at which to compute energies')
     parser.add_argument('--no-relax', action='store_true', help='Skip relaxing the molecular structure')
@@ -72,7 +74,7 @@ if __name__ == "__main__":
     logger.info(f'Starting E_min run for {args.molecule} (InChI Key: {our_key}) in {out_dir}')
     logger.info(f'Running accuracy level: {args.level}. Relaxation: {not args.no_relax}')
 
-    # Start Parsl
+    # Make the Parsl configuration
     if args.compute_config is None:
         logger.info('Using default Parsl configuration of a single worker on the local machine')
         config = Config(
@@ -84,8 +86,10 @@ if __name__ == "__main__":
 
     compute_execs = [e.label for e in config.executors]
     config.executors = list(config.executors) + [ThreadPoolExecutor(max_threads=1, label='writer')]  # Add a process that only writes
+    config.run_dir = str(out_dir / 'runinfo')
 
     dfk = parsl.load(config)
+
     pinned_fun = partial(run_molecule, level=args.level, relax=not args.no_relax)
     update_wrapper(pinned_fun, run_molecule)
     run_app = python_app(pinned_fun, executors=compute_execs)
@@ -137,7 +141,7 @@ if __name__ == "__main__":
             Returns:
                 Number submitted
             """
-            count = 0
+            count = 0  # Number of new computations
 
             # Submit all the molecules
             submit_controller = Semaphore(max(args.num_parallel, 2))  # Control the maximum number of submissions
@@ -152,6 +156,7 @@ if __name__ == "__main__":
 
                 # Add the write app, if needed
                 if not my_is_done:
+                    count += 1
                     my_result.add_done_callback(lambda x: submit_controller.release())
                     write_app(my_key, my_smiles, my_result, known_energies, save_result=my_save_results)
                 else:
@@ -179,7 +184,7 @@ if __name__ == "__main__":
             else:
                 logger.info(f'Selecting a random subset from Surge molecules. Amount to select: {args.surge_amount}')
                 mol_list, total = get_random_selection_with_surge(formula, to_select=args.surge_amount)
-                logger.info(f'Selected {len(mol_list)} molecules out of {total} created by Surge. ({len(mol_list) / total * 100:.2g}%)')
+                logger.info(f'Selected {len(mol_list)} molecules out of {total} created by Surge. ({len(mol_list) / total * 100:.3g}%)')
 
             # Run them all
             before_count = len(known_energies)
@@ -188,3 +193,5 @@ if __name__ == "__main__":
             logger.info(f'Completed {success_count} molecules from Surge of {submit_count} submitted')
 
         logger.info(f'Final E_min compared against {len(known_energies)} molecules: {(our_energy - min(known_energies.values())) * 1000: .1f} mHa')
+
+        logger.info(f'Runtime: {perf_counter() - start_time:.2f}s')
