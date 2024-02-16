@@ -3,7 +3,7 @@
 [![Coverage Status](https://coveralls.io/repos/github/HydrogenStorage/molecular-stability-computer/badge.svg?branch=main)](https://coveralls.io/github/HydrogenStorage/molecular-stability-computer?branch=main)
 
 Estimate the synthesizability of a molecule by assessing its stability relative to other molecules.
-Computes the E<sub>min</sub> metric proposed by Lee et al., which is the difference between the energy of a molecule 
+Computes the [E<sub>min</sub> metric proposed by Lee et al.](https://doi.org/10.1021/acs.jcim.3c01583), which is the difference between the energy of a molecule 
 and its lowest-energy constitutional isomer.
 
 ## Installation
